@@ -66,3 +66,9 @@ Thanks, @barinek
 
 © 2021 by Initial Capacity, Inc. All rights reserved.
 
+
+before u try to run this, u need to 
+sdk selfupdate force
+sdk install gradle 8.9
+gradle wrapper --gradle-version 8.7
+
