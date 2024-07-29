@@ -1,0 +1,224 @@
+---
+title: "Study of NYPD Shooting Insedents"
+author: "Wenhao C"
+date: "2024-06-22"
+output: pdf_document
+---
+
+
+The study of NYPD shooting incidents is an essential effort aimed at understanding the patterns, causes, and impacts of gun violence in New York City. This analysis is crucial for law enforcement agencies, policymakers, and community leaders who are striving to develop effective strategies to reduce violence and enhance public safety. By examining detailed datasets provided by the NYPD, we can uncover trends, identify high-risk areas, and understand the demographic factors associated with shooting incidents.
+
+
+#Step 0 : Import Lib Set up the Env
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('tidyverse')
+library(lubridate)
+library(dplyr)
+library( tidyverse)
+```
+#Step 1 : Data Collection
+Gathering data from the NYPD shooting incident reports, which include detailed information on the date, location, and circumstances of each incident.
+```{r readdata}
+#can not find way read data from data.gov, so i upload to my github.
+nypd_data_raw <- read.csv("https://github.com/vihoc/learning-stuff/raw/main/NYPD_Shooting_Incident_Data__Historic_.csv");
+
+```
+```{r rawdatas}
+
+tail(nypd_data_raw)
+
+```
+
+#Step 2 : Data Cleaning and Preparation
+Processing the raw data to ensure accuracy and completeness. This involves handling missing values, tidy the unrelvent Data, correcting inconsistencies, and transforming variables for analysis.
+```{r tidy}
+
+nypd_data_pre = nypd_data_raw %>%
+  select(-(X_COORD_CD:Lon_Lat), -c(LOC_OF_OCCUR_DESC, INCIDENT_KEY, LOCATION_DESC, LOC_CLASSFCTN_DESC, JURISDICTION_CODE))%>%
+  select(-c(PERP_AGE_GROUP, PERP_SEX, PERP_RACE))%>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) 
+tail(nypd_data_pre)
+
+```
+#step 3 : Analysis
+Using statistical techniques to identify significant trends and correlations.
+To get the subset of the Data, try the different approach.
+What data should i take?
+Since i don't have any experience , The first idea is Permutations and combinations.
+nypd_data_groupbyDate <- nypd_data_pre %>%
+  group_by(OCCUR_DATE) %>%
+  summarise(cases = n())%>%
+  arrange(OCCUR_DATE) %>%
+  ungroup()
+tail(nypd_data_groupbyDate)
+
+
+nypd_data_groupByBoro <- nypd_data_pre %>%
+  group_by(BORO) %>%
+  summarise(cases = n()) %>%
+  ungroup()
+tail(nypd_data_groupByBoro)
+
+nypd_Vic_groupByage <- nypd_data_pre %>%
+  group_by(VIC_AGE_GROUP) %>%
+  summarise(cases = n())%>%
+  ungroup()
+
+tail(nypd_Vic_groupByage)
+
+nypd_data_analysis <- nypd_data_pre %>%
+  group_by(OCCUR_DATE,  BORO, STATISTICAL_MURDER_FLAG) %>%
+  summarise(cases = n()) %>%
+  arrange(OCCUR_DATE) #%>%
+  #ungroup()
+head(nypd_data_analysis)
+
+summary_stats <-nypd_data_analysis %>%
+  group_by(BORO) %>%
+  summarise(total_incidents = sum(cases),
+            avg_incidents_per_day = mean(cases),
+            proportion_murder = mean(STATISTICAL_MURDER_FLAG == "true"))
+
+tail(summary_stats)
+
+nypd_data_by_month <- nypd_data_analysis %>%
+  mutate(month = floor_date(as.Date(OCCUR_DATE), "month")) %>%
+  group_by(month, BORO) %>%
+  select(-c(OCCUR_DATE))
+
+head(nypd_data_by_month)
+
+nypd_Vic_data <- nypd_data_pre %>%
+  group_by(VIC_AGE_GROUP, VIC_RACE, VIC_SEX) %>%
+  summarise(cases = n())
+
+murder_chance_data <- nypd_data_by_month %>%
+  group_by(month, BORO) %>%
+  summarise(
+    total_cases = sum(cases),
+    murder_cases = sum(cases * as.logical(STATISTICAL_MURDER_FLAG)),
+    murder_chance = murder_cases / total_cases
+  )
+murder_chance_data
+
+nypd_data_by_month <- nypd_data_by_month %>%
+  summarise(monthly_incidents = sum(cases))
+tail(nypd_data_by_month)
+
+```
+
+#Step 3 : Visualization
+Creating visualizations to effectively communicate the findings. This includes charts, graphs, and maps that highlight key insights from the data.
+sing the data we obtained above, we can see which districts are the most unsafe, which ethnicities, ages, and genders are most likely to be targeted, and the probability of violent incidents occurring. If we use this data as a foundation and add necessary additional data, we can surely achieve more accurate analysis.
+With the data i selected on step 2. with a few try. 
+i decide include those graph into the assignment.
+
+###graph 1: breaks down the incidents by the race of victims within each borough.
+```{r datavisualize}
+#basic case visualize
+ggplot(nypd_data_pre, aes(x = BORO, fill = VIC_RACE)) +
+  geom_bar(position = "dodge") + 
+  labs(title = "Distribution of Incidents by Victims RACE Group and Borough")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+data shows Brooklyn and Bronx have consistently higher incidents compared to other boroughs.
+The trend line for Staten Island is relatively low compared to other boroughs, indicating fewer incidents.
+
+###graph 2: show the distribution of shooting incidents among different age groups of victims. 
+```{r}
+#could make the same graph with race or sex, but i don't 
+ggplot(nypd_Vic_groupByage, aes(x = "", y = cases, fill = VIC_AGE_GROUP)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y") +
+  labs(title = "Age of Victims")
+```
+the data shows age group “25-44” appears to have the highest number of victims.The “1022” group is present, which is unknow, and also a significant portion of “UNKNOWN” age group cases could cause the bias.
+
+###graph 3: show the number of shooting incidents over time on a monthly basis for each borough.
+
+```{r}
+ggplot(nypd_data_by_month, aes(x = month, y = monthly_incidents, color = BORO)) +
+  geom_line() + 
+  geom_point() + 
+  labs(title = "Monthly Incedents Over Time By Borough", x = "Month",  y = "Number of Incedents")
+```
+the result shows the same with graph 1, but we could see the details.
+
+###graph 4: depicts the fluctuation in murder chances over time across different boroughs.
+```{r}
+ggplot(murder_chance_data, aes(x = month, y = murder_chance, color = BORO)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Murder Chance Over Time by Borough",
+       x = "Date",
+       y = "Murder Chance",
+       color = "Borough") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+here is a notable variation in murder chances over the years.Certain spikes can be observed, indicating periods of higher murder rates.
+Staten Island shows the highest peaks in murder chances, suggesting occasional high-risk periods. which is interesting that compared to the incidents case date.
+
+Step 4 : Model Building, Evaluation, Prediction
+Perform: approach actual cases predict across different age groups and illustrates the correlation between predicted and actual cases
+
+```{r model}
+
+summary(nypd_Vic_data)
+
+nypd_Vic_data$VIC_AGE_GROUP <- factor(nypd_Vic_data$VIC_AGE_GROUP, levels = c("<18", "1022", "18-24", "25-44", "45-64", "65+", "UNKNOWN"))
+nypd_Vic_data$VIC_SEX <- as.factor(nypd_Vic_data$VIC_SEX)
+nypd_Vic_data$VIC_RACE <- as.factor(nypd_Vic_data$VIC_RACE)
+
+vic_agemod <- lm(cases ~ VIC_AGE_GROUP, data = nypd_Vic_data)
+vic_sexmod <- lm(cases ~ VIC_SEX, data = nypd_Vic_data)
+vic_racemod <- lm(cases ~ VIC_RACE, data = nypd_Vic_data)
+summary(vic_agemod)
+summary(vic_sexmod)
+summary(vic_racemod)
+
+nypd_Vic_data$predicted_casesbyage <- predict(vic_agemod, newdata = nypd_Vic_data)
+nypd_Vic_data$predicted_casesbysex <- predict(vic_sexmod, newdata = nypd_Vic_data)
+nypd_Vic_data$predicted_casesbyrace <- predict(vic_racemod, newdata = nypd_Vic_data)
+
+predictions_long <- nypd_Vic_data %>%
+  pivot_longer(cols = starts_with("predicted"), names_to = "model", values_to = "predicted_cases")
+tail(predictions_long)
+
+ggplot(predictions_long, aes(x = VIC_AGE_GROUP, y = cases)) +
+  geom_point(aes(color = "Actual Cases"), size = 2) +
+  geom_point(aes(y = predicted_cases, color = model), size = 2, shape = 1) +
+  geom_line(aes(y = predicted_cases, group = model, color = model), linetype = "dashed") +
+  labs(title = "Actual vs Predicted Cases by AGE, RACE, and SEX",
+       x = "Age Group",
+       y = "Cases",
+       color = "Legend") +
+  theme_minimal()
+
+vic_mod <- lm(cases ~ VIC_AGE_GROUP + VIC_SEX + VIC_RACE,  data = nypd_Vic_data)
+summary(vic_mod)
+nypd_Vic_data$predicted <- predict(vic_mod, newdata = nypd_Vic_data)
+
+ggplot(nypd_Vic_data, aes(x = cases, y = predicted)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  labs(title = "Predicted vs Actual Cases", x = "Actual Cases", y = "Predicted Cases")
+```
+#Summary
+It shows the 25-44 age group has the highest mean number of cases.
+There is variability across racial groups, Black victims have the highest number of cases, with notable counts for Black Hispanic and White victims.
+males victims have a higher number of cases compared to other groups
+
+
+#Step 5 : Bias Identification  
+Not all incidents may be accurately reported or recorded. Misclassifications can occur due to errors in data entry or differences in the interpretation of what constitutes a shooting incident. For instance, there is an entry labeled ‘1022’ in the VIC_AGE_GROUP field, which remains unclear and introduces ambiguity. Additionally, there are gaps in information related to sex, age, and race. However, it’s important to note that any conclusions about bias cannot be definitively confirmed or validated, as I lack insight into the New York Police Department’s internal activities. My analysis is based on the available data, and I have taken care to avoid drawing false conclusions regarding any potential bias within this dataset
+
+
+While the analysis of NYPD shooting incidents can provide valuable insights, it is crucial to remain vigilant about potential biases that could distort the findings. By implementing robust data collection, validation, and analytical practices, it is possible to mitigate these biases and ensure a more accurate and fair analysis. This approach not only improves the reliability of the conclusions but also enhances their utility in informing policy and operational decisions.
+
+#Session Info:
+```{r}
+sessionInfo()
+```
