@@ -1,0 +1,178 @@
+---
+title: "Final Project 2: Reproducible Report on COVID19 Data"
+output: pdf_document
+author: WenhaoC
+---
+
+##### Introduction
+
+The COVID-19 pandemic has profoundly affected the world since its emergence in late 2019. Understanding the trends in COVID-19 cases, deaths, and recoveries is crucial for public health planning, resource allocation, and implementing effective interventions. This study aims to analyze the daily trends of COVID-19 in selected countries, providing insights into the progression of the pandemic and the effectiveness of response measures.
+
+
+```{r Init_Env, echo=FALSE}
+#install.packages("lubridate")
+#install.packages("zoo")
+library(lubridate)
+library( tidyverse)
+#library(zoo)
+```
+
+Data Collection: Collecting data on COVID-19 confirmed cases, deaths, and recoveries from the dataset
+
+```{r Init_Data}
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_name = c("time_series_covid19_confirmed_US.csv",
+"time_series_covid19_confirmed_global.csv",
+"time_series_covid19_deaths_US.csv",
+"time_series_covid19_deaths_global.csv",
+"time_series_covid19_recovered_global.csv")
+urls = str_c(url_in, file_name)
+urls
+comfirm_us <- read.csv(urls[1]);
+comfirm_global <- read_csv(urls[2])
+comfirm_deaths_us <- read.csv(urls[3])
+comfirm_death_global <- read.csv(urls[4])
+comfirm_recovered_global <- read.csv(urls[5])
+
+```
+
+Data Preprocessing: Cleaning and transforming the data to ensure accuracy and consistency. 
+
+```{r preprocess_globaldata}
+comfirm_global1 <- comfirm_global %>%
+  pivot_longer(cols = -c('Province/State', 'Country/Region', Lat, Long) , names_to = 'date', values_to = 'cases')  %>% 
+  select(-c(Lat, Long)) %>% 
+  rename('Country_Region' = 'Country/Region', 'Province_State' = 'Province/State') %>% 
+  mutate(date = mdy(date)) %>% 
+  mutate(date = format(date, "%m/%d/%y"))
+
+comfirm_death_global1 <- comfirm_death_global %>%
+  pivot_longer(cols = -c('Province.State', 'Country.Region', Lat, Long) , names_to = 'date', values_to = 'deaths') %>% 
+  select(-c(Lat, Long)) %>% 
+  rename('Country_Region' = 'Country.Region', 'Province_State' = 'Province.State') %>% 
+  mutate(date = mdy(gsub("^X", "", date))) %>%
+  mutate(date = format(date, "%m/%d/%y"))
+
+comfirm_recovered_global1 <- comfirm_recovered_global %>%
+  pivot_longer(cols = -c('Province.State', 'Country.Region', Lat, Long) , names_to = 'date', values_to = 'Cure') %>%
+  select(-c(Lat, Long)) %>%
+  rename('Country_Region' = 'Country.Region', 'Province_State' = 'Province.State') %>%
+  mutate(date = mdy(gsub("^X", "", date))) %>%
+  mutate(date = format(date, "%m/%d/%y"))
+
+
+summaryglobal <- comfirm_recovered_global1 %>%
+  full_join(comfirm_global1, by = c("Country_Region", "Province_State", "date")) %>%
+  full_join(comfirm_death_global1, by = c("Country_Region", "Province_State", "date"))%>%
+  mutate(date = mdy(date)) %>%
+  filter(cases > 0)%>%
+  unite ("combined_key", c('Province_State', 'Country_Region'), 
+         sep = ', ', na.rm = TRUE, remove = FALSE)
+
+
+summary(summaryglobal)
+
+summary_by_country <- summaryglobal %>%
+  group_by(Province_State, Country_Region, date) %>%
+  summarise(cases = sum(cases, na.rm = TRUE), Cure = sum(Cure, na.rm = TRUE), 
+            deaths = sum(deaths, na.rm = TRUE)) %>%
+  ungroup()
+
+summary_by_country_new <- summary_by_country %>%
+  mutate(new_cases = cases - lag(cases),
+         new_deaths = deaths - lag(deaths),
+         new_cure = Cure - lag(Cure)) %>%
+   filter(!is.na(new_cases) & !is.na(new_deaths) & !is.na(new_cure))
+
+
+
+groupsummary_by_country <- summary_by_country_new %>%
+  summarise(new_cases = sum(new_cases, na.rm = TRUE), 
+            new_deaths = sum(new_deaths, na.rm = TRUE), 
+            new_cure = sum(new_cure, na.rm = TRUE)) %>%
+  ungroup()
+  
+
+```
+
+Data Analysis: Visualizing the data to identify initial trends and anomalies. This involves plotting the cumulative and daily counts of cases, deaths, and recoveries.
+```{r vistualusdata}
+global_graph <- summary_by_country %>%
+  filter(cases > 0) %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cases, color = "Cases")) +
+  geom_line(aes(y = Cure, color = "Recovered")) +
+  geom_line(aes(y = deaths, color = "Deaths")) +
+  scale_y_log10() + 
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) +
+  labs(title = "COVID-19 Global Trends", y = "Count (log scale)", x = "Date") +
+  scale_color_manual(values = c("Cases" = "red", "Recovered" = "green", "Deaths" = "blue"))
+  
+northamerican <- c("Canada", "Mexico", "US")
+selectedcountry_graph <- summary_by_country %>%
+  filter(Country_Region %in% northamerican) %>%
+  filter(cases>0) %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = cases, color = Country_Region)) +
+  geom_point(aes(y = cases, color = Country_Region)) +
+  scale_y_log10() + 
+  theme(legend.position = "buttom", axis.text.x = element_text(angle = 90)) + 
+  labs(title = str_c("COVID-19 Trends for NorthAmerica Country"), y = "Count (log scale)", x = "Date") + 
+  scale_color_manual(values = c("US" = "red", "Canada" = "yellow", "Mexico" = "blue"))
+
+global_graph_new <- summary_by_country_new %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = new_cases, color = "New Cases")) +
+  geom_line(aes(y = new_deaths, color = "New Deaths")) +
+  geom_line(aes(y = new_cure, color = "New Recoveries")) +
+  scale_y_log10() +
+  labs(title = "Daily COVID-19 Trends for Selected Countries(US)", y = "Daily Count (log scale)", x = "Date") +
+  theme_minimal() +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) +
+  scale_color_manual(values = c("New Cases" = "blue", "New Deaths" = "red", "New Recoveries" = "yellow"))
+  
+global_graph
+selectedcountry_graph
+global_graph_new
+```
+For this part of the study, I have generated three graphs: Global COVID-19 Trends, COVID-19 Trends for North American Countries, and Daily COVID-19 Trends for Selected Countries. The first graph visualizes global trends in COVID-19 cases, recoveries, and deaths over time. The second graph compares the data between some North American countries (Canada, Mexico, and the United States). The third graph shows the trends of newer data for specific countries, focusing on daily new cases, deaths, and recoveries. These graphs collectively provide a comprehensive view of the pandemic’s progression globally, regionally, and daily.
+
+
+Modeling: Applying linear regression to model the daily new deaths and forecast future trends. 
+```{r model}
+country <- "US"
+
+deaths_country <- comfirm_death_global1 %>%
+  filter(Country_Region == country) %>%
+  group_by(date) %>%
+  summarise(deaths = sum(deaths, na.rm = TRUE)) %>%
+  mutate(date = as.Date(date, format = "%d/%m/%y")) %>%
+  filter(!is.na(date)) %>%
+  mutate(day_num = as.numeric(date - min(date)))
+
+model <- lm(deaths ~ day_num, data = deaths_country)
+summary(model)
+
+future_days <- data.frame(day_num = (max(deaths_country$day_num) + 1):(max(deaths_country$day_num) + 30))
+
+future_days$date <- seq.Date(from = max(deaths_country$date) + 1, by = "day", length.out = 30)
+
+future_days$predicted_new_deaths <- predict(model, newdata = future_days)
+
+ggplot(deaths_country, aes(x = date, y = deaths)) +
+  geom_line(color = "red") +
+  geom_point(data = future_days, aes(x = date, y = predicted_new_deaths), color = "blue") +
+  labs(title = paste("COVID-19 Daily New Deaths in", country), x = "Date", y = "New Deaths") +
+  theme_minimal() +
+  geom_smooth(method = "lm", se = FALSE, color = "black")
+
+```
+The linear regression model analyzing daily new COVID-19 deaths indicates a significant upward trend, with a coefficient of 973.32 for day_num, suggesting an average increase of approximately 973 deaths per day. The model’s intercept is 44,714.70, representing the estimated initial death count. The model is statistically significant (p < 2e-16) with an R-squared value of 0.8355, indicating that approximately 83.55% of the variance in daily deaths is explained by the model. Despite this, the residual standard error of 153,200 deaths highlights considerable variation not captured by the model, suggesting the presence of other influencing factors.
+
+
+Bias Issue: In COVID-19 data, such as differences in reporting standards, data quality, and selection bias, can significantly impact the predictability and accuracy of results. Data lag in recovery reporting, caused by delays, inconsistent criteria, underreporting, and backlogs, can lead to misleading trends and reduced model accuracy. 
+
+```{r sessioninfo, echo=FALSE}
+sessionInfo()
+```
+Thanks for your time.
