@@ -46,6 +46,7 @@ Using statistical techniques to identify significant trends and correlations.
 To get the subset of the Data, try the different approach.
 What data should i take?
 Since i don't have any experience , The first idea is Permutations and combinations.
+```{r dataprocess}
 nypd_data_groupbyDate <- nypd_data_pre %>%
   group_by(OCCUR_DATE) %>%
   summarise(cases = n())%>%
